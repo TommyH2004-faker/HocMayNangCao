@@ -1,0 +1,1463 @@
+================================================================================
+                    PHÂN TÍCH TOÀN BỘ SOURCE CODE
+                    HỆ THỐNG CHẤM CÔNG NHẬN DIỆN KHUÔN MẶT
+================================================================================
+
+TÁC GIẢ: Lê Việt Anh
+NGÀY PHÂN TÍCH: 9/11/2025
+
+================================================================================
+                            TỔNG QUAN DỰ ÁN
+================================================================================
+
+CÔNG NGHỆ SỬ DỤNG:
+- Framework giao diện: PyQt5
+- Computer Vision: OpenCV, YOLO v11 (nhận diện khuôn mặt)
+- Deep Learning: TensorFlow/Keras, MobileNetV2
+- Machine Learning: Scikit-learn (preprocessing)
+- Thư viện bổ trợ: cvzone, numpy
+
+MỤC ĐÍCH:
+Phần mềm chấm công tự động sử dụng công nghệ nhận diện khuôn mặt với các tính năng:
+1. Thu thập dữ liệu gương mặt từ camera
+2. Xử lý và huấn luyện mô hình CNN để nhận diện
+3. Chấm công (check in/out) tự động qua camera
+4. Lưu trữ thông tin thời gian và hình ảnh
+
+================================================================================
+                        CẤU TRÚC THƯ MỤC DỰ ÁN
+================================================================================
+
+timekeeping/
+│
+├── MainUi.py                    # File UI được generate từ Qt Designer
+├── handle_main.py               # File chính điều khiển các trang
+├── handle_page_get_data.py      # Xử lý trang thu thập dữ liệu
+├── handle_page_train.py         # Xử lý trang training model
+├── handle_page_run.py           # Xử lý trang chấm công
+├── ImageDetect.py               # Class xử lý phát hiện và cắt khuôn mặt
+├── check_and_save_img.py        # Quản lý lưu trữ ảnh check in/out
+│
+├── data_image_raw/              # Thư mục chứa ảnh gương mặt thô (training)
+│   ├── hiep/
+│   ├── Hiệp/
+│   └── Name/
+│
+├── image_data/                  # Thư mục lưu ảnh check in
+│   ├── hiep/
+│   ├── Hieu/
+│   ├── pewpew/
+│   ├── phuong/
+│   └── Viet Anh/
+│
+├── model/                       # Thư mục chứa model AI
+│   ├── model_cnn.h5            # Model CNN đã train
+│   ├── yolov11n-face.pt        # Model YOLO phát hiện khuôn mặt
+│   └── categories.pkl          # File lưu encoder labels
+│
+├── requirements.txt             # Các thư viện cần cài đặt
+├── training_data.ipynb         # Notebook thử nghiệm training
+├── attendance_logger.py        # Class quản lý logging và xuất Excel
+├── attendance_log.json         # File lưu dữ liệu chấm công
+└── excel/                      # Thư mục chứa file Excel đã xuất
+    ├── ChamCong_DD-MM-YYYY_HH-MM-SS.xlsx
+    └── ...
+
+================================================================================
+                    PHÂN TÍCH CHI TIẾT TỪNG FILE
+================================================================================
+
+--------------------------------------------------------------------------------
+1. MainUi.py - GIAO DIỆN NGƯỜI DÙNG
+--------------------------------------------------------------------------------
+
+FILE NÀY ĐƯỢC TỰ ĐỘNG GENERATE TỪ Qt DESIGNER (*.ui file)
+
+CẢNH BÁO: File này sẽ bị ghi đè khi chạy lại pyuic5!
+
+CẤU TRÚC GIAO DIỆN:
+- MainWindow: Cửa sổ chính kích thước 1402x850
+- 4 Radio Button chính:
+  * button_instrucst: Hướng dẫn
+  * button_get_faces: Thu thập dữ liệu
+  * button_preprocess_training: Xử lý và train
+  * button_run_trial: Chấm công
+
+- StackedWidget chứa 4 trang:
+
+  [1] page_instruct - TRANG HƯỚNG DẪN
+      - textBrowser: Hiển thị hướng dẫn sử dụng chi tiết
+      - Nội dung HTML được hard-code, bao gồm:
+        + Hướng dẫn 3 bước sử dụng phần mềm
+        + Lưu ý về điều kiện ánh sáng
+        + Yêu cầu tối thiểu: 5 người, mỗi người 500 ảnh
+
+  [2] page_get_data - TRANG THU THẬP DỮ LIỆU
+      - cam_view_main: QLabel hiển thị video từ camera (640x480)
+      - view_face: QLabel hiển thị khuôn mặt đã cắt (128x128)
+      - get_name_face: LineEdit nhập tên người
+      - get_number_face: LineEdit nhập số ảnh cần lấy (mặc định 500)
+      - push_get_data_face: Button bắt đầu thu thập
+      - push_stop_get_data: Button tạm dừng
+
+  [3] page_train - TRANG TRAINING MODEL
+      - scrollArea: Vùng cuộn hiển thị log quá trình training
+      - log_res: QLabel hiển thị nội dung log
+      - frame_2: Frame chứa 4 radio button chọn số người:
+        + dưới 5 người
+        + dưới 10 người
+        + dưới 15 người
+        + dưới 20 người
+      - push_training: Button bắt đầu xử lý và training
+      - progressBar: Thanh tiến trình (0-100%)
+
+  [4] page_run - TRANG CHẤM CÔNG
+      - cam_view_main_2: QLabel hiển thị camera chính (640x480)
+      - cam_view_in: QLabel hiển thị ảnh lúc check in (401x301)
+      - label_set_name: Hiển thị tên người được nhận diện
+      - labe_set_time: Hiển thị thời gian check in
+      - push_run: Button bắt đầu nhận diện
+      - push_stop: Button dừng nhận diện
+      - push_check_in: Button check in
+      - push_check_out: Button check out
+      - push_export: Button xuất file EXCEL
+
+FONT CHÍNH: Segoe UI (kích thước 12-20pt)
+BORDER STYLE: Sử dụng CSS inline cho các component
+
+--------------------------------------------------------------------------------
+2. handle_main.py - FILE ĐIỀU KHIỂN CHÍNH
+--------------------------------------------------------------------------------
+
+CLASS: HandleMain
+THỪA KẾ: HandlePageGetData, HandelPageTrain, HandlePageRun
+
+VAI TRÒ: 
+- Điều phối toàn bộ ứng dụng
+- Kết nối các trang với nhau
+- Quản lý trạng thái camera giữa các trang
+
+THUỘC TÍNH:
+- cap: đối tượng VideoCapture từ OpenCV (camera)
+- mode_cam: trạng thái camera trang thu thập dữ liệu
+- mode_cam_run: trạng thái camera trang chấm công
+- log_res: QLabel hiển thị log (có word wrap)
+- layout: VBoxLayout cho scrollArea
+- model_cnn: Model CNN để nhận diện
+- lb: Mảng numpy chứa labels (tên người)
+
+PHƯƠNG THỨC CHÍNH:
+
+__init__(MainWindow):
+  - Khởi tạo các class cha theo thứ tự: Run -> Train -> GetData
+  - Thiết lập word wrap cho log_res
+  - Tạo layout cho scrollAreaWidgetContents
+  - Kết nối lại các button với hàm tương ứng (do bị ghi đè khi init)
+  - Kết nối các radio button với hàm change_page
+  - Click vào button_instrucst để hiển thị trang đầu tiên
+
+change_page(index):
+  LOGIC PHỨC TẠP - Quản lý chuyển trang và trạng thái camera
+  
+  [index = 1] - Chuyển về trang HƯỚNG DẪN:
+    - Ngắt kết nối timer của cả 2 camera
+    - Đặt mode_cam = 'off', mode_cam_run = 'off'
+    - Release camera (cap.release())
+    
+  [index = 2] - Chuyển về trang THU THẬP DỮ LIỆU:
+    - Ngắt kết nối timer camera chấm công
+    - Mở camera nếu chưa mở (cv2.VideoCapture(0))
+    - Kết nối timer với update_frame()
+    - Đặt mode_cam = 'update_frame'
+    
+  [index = 3] - Chuyển về trang TRAINING:
+    - Ngắt kết nối tất cả timer
+    - Đặt cả 2 mode về 'off'
+    - Release camera
+    
+  [index = 4] - Chuyển về trang CHẤM CÔNG:
+    - Load model CNN từ 'model/model_cnn.h5'
+    - Load categories từ 'model/categories.pkl'
+    - Chuyển categories thành numpy array
+    - Ngắt timer camera thu thập dữ liệu
+    - Mở camera nếu chưa mở
+    - Kết nối timerr với update_frame_run()
+    - Đặt mode_cam_run = 'update_frame_run'
+
+LƯU Ý QUAN TRỌNG:
+- Phải disconnect timer cũ trước khi connect mới
+- Có 2 timer riêng biệt: timer (get_data) và timerr (run)
+- Camera chỉ được mở khi cần thiết để tiết kiệm tài nguyên
+- Model chỉ được load khi vào trang chấm công
+
+--------------------------------------------------------------------------------
+3. handle_page_get_data.py - THU THẬP DỮ LIỆU
+--------------------------------------------------------------------------------
+
+CLASS: HandlePageGetData
+THỪA KẾ: Ui_MainWindow
+
+VAI TRÒ:
+- Quản lý việc thu thập ảnh gương mặt từ camera
+- Sử dụng YOLO để phát hiện khuôn mặt
+- Lưu ảnh đã cắt vào thư mục data_image_raw/
+
+MODEL SỬ DỤNG:
+- YOLO v11n-face (model/yolov11n-face.pt)
+- Confidence threshold: 0.6
+
+THUỘC TÍNH:
+- count: Đếm số ảnh đã lưu
+- mode_cam: Trạng thái camera ('off', 'update_frame', 'start_detect')
+- timer: QTimer cập nhật khung hình (30ms = ~33 FPS)
+- number_face: Số ảnh tối đa cần lấy
+- cap: VideoCapture object
+
+PHƯƠNG THỨC:
+
+__init__(MainWindow):
+  - Khởi tạo timer với interval 30ms
+  - Kết nối các button:
+    + push_get_data_face -> start_detect
+    + push_stop_get_data -> update_frame
+
+start_detect():
+  QUY TRÌNH THU THẬP DỮ LIỆU:
+  
+  1. Kiểm tra và chuyển mode:
+     - Nếu đang ở mode 'update_frame', disconnect nó
+     - Chuyển sang mode 'start_detect'
+  
+  2. Lấy số ảnh cần thu thập từ input:
+     - number_face = int(get_number_face.text())
+  
+  3. Kiểm tra đã đủ số ảnh chưa:
+     - Nếu count >= number_face:
+       + Disconnect start_detect
+       + Chuyển về mode 'update_frame'
+       + Reset count = 0
+       + Return
+  
+  4. Đọc frame từ camera:
+     - cap.read() -> check_done, frame
+     - Flip ảnh theo trục dọc (cv2.flip(frame, 1))
+  
+  5. Phát hiện và lưu khuôn mặt:
+     - Lấy tên từ get_name_face.text()
+     - Tạo ImageDetect object:
+       + image_input: frame hiện tại
+       + index: count
+       + name_label: tên người
+     
+  6. Hiển thị kết quả:
+     - Hiển thị image_output lên cam_view_main
+     - Nếu ID.check == 1 (tìm thấy mặt):
+       + Hiển thị img_face lên view_face
+       + count += 1
+     - Nếu không tìm thấy:
+       + Hiển thị text "Không nhận thấy gương mặt"
+
+update_frame():
+  HIỂN THỊ CAMERA BÌNH THƯỜNG:
+  
+  1. Disconnect start_detect nếu đang chạy
+  2. Chuyển mode_cam = 'update_frame'
+  3. Đọc frame từ camera
+  4. Flip ảnh
+  5. Chuyển đổi sang QImage
+  6. Hiển thị lên cam_view_main
+
+convert_qimg(image):
+  CHUYỂN ĐỔI ĐỊNH DẠNG ẢNH:
+  
+  OpenCV (BGR) -> Qt (RGB)
+  - cv2.cvtColor(image, COLOR_BGR2RGB)
+  - Lấy height, width, channels
+  - Tính bytes_per_line = channels * width
+  - Tạo QImage từ bytes
+  - Return QImage.Format_RGB888
+
+closeEvent(event):
+  DỌN DẸP KHI ĐÓNG:
+  - Release camera nếu đang mở
+  - Stop timer
+  - Accept event
+
+LƯU Ý:
+- Tốc độ thu thập phụ thuộc vào tốc độ YOLO detect
+- Không thu thập nếu không phát hiện được mặt
+- Ảnh được lưu qua ImageDetect class
+
+--------------------------------------------------------------------------------
+4. handle_page_train.py - TRAINING MODEL
+--------------------------------------------------------------------------------
+
+CLASS: HandelPageTrain
+THỪA KẾ: Ui_MainWindow, QThread
+
+VAI TRÒ:
+- Xử lý ảnh thô từ data_image_raw/
+- Training model CNN với transfer learning (MobileNetV2)
+- Chạy trên luồng riêng để không block UI
+
+SIGNAL PYQT:
+- update_log_signal(str): Gửi log từ thread về UI
+- update_log_percent(int): Cập nhật progress bar
+
+THUỘC TÍNH:
+- data_processed: Numpy array chứa ảnh đã xử lý
+- label_processed: Labels sau khi OneHotEncoder
+- note_out: String tích lũy log để hiển thị
+- cat: Categories của encoder
+
+PHƯƠNG THỨC:
+
+__init__(MainWindow):
+  - Kết nối push_training với start_training
+  - Kết nối signals với slots:
+    + update_log_signal -> update_log
+    + update_log_percent -> update_percent
+
+start_training():
+  - Reset note_out
+  - Hiển thị "Bắt đầu xử lý..."
+  - Gọi self.start() -> chạy thread -> gọi run()
+
+run():
+  LUỒNG TRAINING (chạy riêng):
+  1. process_img_to_numpy()
+  2. train()
+
+process_img_to_numpy():
+  XỬ LÝ ẢNH THÔ:
+  
+  1. Quét thư mục data_image_raw:
+     - list_label = os.listdir('data_image_raw')
+     - Mỗi subfolder là 1 label (tên người)
+  
+  2. Đọc tất cả ảnh:
+     - Với mỗi label:
+       + Quét tất cả ảnh trong thư mục
+       + cv2.imread() -> matrix
+       + Append vào data_img[]
+       + Append label vào label[]
+       + Gửi log: "Đã xử lý xong ảnh của: {item}"
+  
+  3. Chuyển đổi sang numpy:
+     - data_img = np.array(data_img)
+     - label = np.array(label).reshape(-1, 1)
+  
+  4. OneHotEncoder:
+     - encoder = OneHotEncoder(sparse_output=False)
+     - label_processed = encoder.fit_transform(label)
+     - Lưu categories vào self.cat
+  
+  5. Chuẩn hóa:
+     - data_processed = data_img.astype('float32') / 255
+     - Normalize về [0, 1]
+  
+  Progress: 20% -> 40% -> 50%
+
+train():
+  TRAINING MODEL CNN:
+  
+  1. Chuẩn bị:
+     - lb = np.array(self.cat[0])  # Array tên người
+     - num_class = lb.size          # Số lớp
+     - Progress: 55%
+  
+  2. Split data:
+     - train_test_split(data, label, test_size=0.2)
+     - 80% train, 20% validation
+     - Progress: 60%
+  
+  3. Load MobileNetV2 (Transfer Learning):
+     - MobileNetV2(input_shape=(128,128,3), include_top=False, weights="imagenet")
+     - Đóng băng các lớp (trainable=False)
+     - Fine-tuning: 1 lớp cuối được trainable=True
+  
+  4. Xây dựng model:
+     Sequential([
+       base_model,                      # MobileNetV2
+       GlobalAveragePooling2D(),        # Thay Flatten
+       BatchNormalization(),
+       Dense(128, activation='relu'),
+       Dropout(0.5),
+       Dense(num_class, activation='softmax')
+     ])
+  
+  5. Compile:
+     - optimizer: Adam(learning_rate=0.0001)
+     - loss: categorical_crossentropy
+     - metrics: accuracy
+  
+  6. Training:
+     - model_cnn.fit(xtrain, ytrain, batch_size=32, epochs=10)
+     - validation_data=(xtest, ytest)
+     - callbacks=[TrainLogger]
+     - Progress: 65% -> 100% (tăng theo epoch)
+  
+  7. Lưu model:
+     - Lưu categories: 'model/categories.pkl'
+     - Lưu model: 'model/model_cnn.h5'
+
+get_model_summary(model):
+  - Capture output của model.summary()
+  - Return dưới dạng string để hiển thị
+
+update_log(message):
+  - Append message vào note_out
+  - Cập nhật log_res.setText()
+  - Tự động scroll xuống cuối
+
+update_percent(value):
+  - Cập nhật progressBar.setValue()
+
+CLASS BỔ TRỢ: TrainLogger(Callback)
+  - Kế thừa từ Keras Callback
+  - on_epoch_end(): Gọi mỗi khi kết thúc 1 epoch
+    + Emit log_signal với thông tin epoch
+    + Emit log_percent (65% + 35% * epoch/10)
+
+LƯU Ý:
+- Dùng QThread để tránh block UI
+- Transfer Learning giúp giảm thời gian training
+- Data augmentation đã bị comment (có thể bật lại)
+- Batch size = 32, epochs = 10
+
+--------------------------------------------------------------------------------
+5. handle_page_run.py - CHẤM CÔNG NHẬN DIỆN
+--------------------------------------------------------------------------------
+
+CLASS: HandlePageRun
+THỪA KẾ: Ui_MainWindow
+
+VAI TRÒ:
+- Nhận diện khuôn mặt realtime từ camera
+- Quản lý check in/out
+- Hiển thị thông tin người đã check in
+
+MODELS SỬ DỤNG:
+- YOLO v11n-face: Phát hiện khuôn mặt
+- CNN (model_cnn.h5): Nhận diện người
+
+THUỘC TÍNH:
+- mode_cam_run: Trạng thái ('off', 'update_frame_run', 'start_predict')
+- timerr: QTimer riêng cho trang này (30ms)
+- OJ: Object CheckAndSaveImg (quản lý ảnh check in)
+- image_input: Ảnh của người được nhận diện
+- name: Tên người được nhận diện
+- lb: Array labels (tên người)
+- model_cnn: Model CNN
+
+PHƯƠNG THỨC:
+
+__init__(MainWindow):
+  - Khởi tạo timerr
+  - Tạo object CheckAndSaveImg
+  - Kết nối buttons:
+    + push_run -> start_predict
+    + push_stop -> update_frame_run
+    + push_check_in -> check_in
+    + push_check_out -> check_out
+    + push_export -> export_data
+
+start_predict():
+  QUY TRÌNH NHẬN DIỆN:
+  
+  1. Load model lần đầu (nếu chưa có):
+     - Load categories từ 'model/categories.pkl'
+     - Load model_cnn từ 'model/model_cnn.h5'
+  
+  2. Chuyển mode:
+     - Disconnect update_frame_run nếu đang chạy
+     - mode_cam_run = 'start_predict'
+  
+  3. Đọc frame:
+     - cap.read() -> ret, frame
+     - Flip ảnh
+     - Tạo frame_copy để lưu ảnh gốc
+  
+  4. Phát hiện khuôn mặt (YOLO):
+     - face_result = face_model.predict(frame, conf=0.6)
+     - boxes_xyxy = kết quả bounding box
+  
+  5. Nếu không tìm thấy mặt:
+     - Reset name = None, image_input = []
+     - Hiển thị "Không tìm thấy gương mặt"
+  
+  6. Với mỗi mặt tìm thấy:
+     a) Cắt và tiền xử lý:
+        - img_cut = frame[y:y+h, x:x+w]
+        - Resize về (128, 128)
+        - Normalize: / 255
+        - Expand dims cho batch
+     
+     b) Dự đoán:
+        - arr_predict = model_cnn.predict(img_cut)
+        - predicted_label_index = argmax(arr_predict)
+        - accuracy = arr_predict[0][index]
+        - name = lb[index]
+     
+     c) Nếu accuracy >= 0.8 (chấp nhận):
+        - Lưu image_input = frame_copy
+        - Lưu name
+        - txt = name + ' ' + accuracy%
+        
+        - Kiểm tra đã check in chưa:
+          + Nếu có: Lấy time và ảnh check in
+            * Hiển thị lên cam_view_in
+            * Hiển thị tên và thời gian
+          + Nếu chưa: Hiển thị "Chưa check in"
+     
+     d) Nếu accuracy < 0.8:
+        - Reset name = None, image_input = []
+        - txt = 'unknow'
+        - Hiển thị "gương mặt không tồn tại"
+     
+     e) Vẽ lên frame:
+        - cvzone.cornerRect: Vẽ bounding box
+        - cv2.putText: Hiển thị tên và độ chính xác
+  
+  7. Hiển thị frame lên cam_view_main_2
+
+update_frame_run():
+  HIỂN THỊ CAMERA BÌNH THƯỜNG:
+  
+  1. Disconnect start_predict
+  2. mode_cam_run = 'update_frame_run'
+  3. Reset name, image_input
+  4. Hiển thị "bấm nhận diện để chạy"
+  5. Đọc và hiển thị frame
+
+check_in():
+  CHỨC NĂNG CHECK IN (LOGIC MỚI):
+  
+  - Nếu name != None và có image_input:
+    + Kiểm tra chưa check in trước đó
+    + Gọi OJ.save_image(image_input, name)
+    + Lưu ảnh với tên là thời gian hiện tại
+    + CHƯA LƯU VÀO JSON (đợi checkout)
+
+check_out():
+  CHỨC NĂNG CHECK OUT (LOGIC MỚI):
+  
+  - Nếu name != None và đã check in:
+    + Lấy thời gian check in từ tên file ảnh
+    + Lấy thời gian check out hiện tại
+    + Tính tổng giờ làm việc (checkout - checkin)
+    + Lưu record đầy đủ vào attendance_log.json
+    + Xóa thư mục chứa ảnh check in
+
+export_data():
+  CHỨC NĂNG XUẤT EXCEL:
+  
+  - Gọi self.logger.export_to_excel()
+  - Xuất dữ liệu từ attendance_log.json
+  - Tạo file Excel trong thư mục excel/
+  - Tên file: ChamCong_DD-MM-YYYY_HH-MM-SS.xlsx
+  - Hiển thị popup thông báo kết quả (thành công/lỗi/không có dữ liệu)
+
+convert_qimg(image):
+  - Tương tự như HandlePageGetData
+
+closeEvent(event):
+  - Release camera
+  - Stop timerr
+
+NGƯỠNG CHÍNH:
+- YOLO confidence: 0.6
+- CNN acceptance: 0.8 (80% accuracy)
+
+--------------------------------------------------------------------------------
+6. ImageDetect.py - PHÁT HIỆN VÀ CẮT KHUÔN MẶT
+--------------------------------------------------------------------------------
+
+CLASS: ImageDetect
+
+VAI TRÒ:
+- Phát hiện khuôn mặt trong ảnh (YOLO)
+- Cắt khuôn mặt và resize về 128x128
+- Áp dụng data augmentation (điều chỉnh độ sáng)
+- Lưu ảnh vào thư mục tương ứng
+
+MODEL: YOLO v11n-face (global variable)
+
+THUỘC TÍNH:
+- image_output: Ảnh có vẽ bounding box và text
+- name_label: Tên người (để đặt tên thư mục)
+- index: Index ảnh (để đặt tên file)
+- check: Flag kiểm tra có tìm thấy mặt không (1/0)
+- img_face: Ảnh khuôn mặt đã cắt
+- x, y, w, h: Tọa độ bounding box
+
+DATA AUGMENTATION:
+- beta = [-40, -38, ..., 56, 58]  # Range từ -40 đến 58, bước 2
+- Dùng cv2.convertScaleAbs với beta[index % len(beta)]
+- Mục đích: Thay đổi độ sáng của ảnh
+
+PHƯƠNG THỨC:
+
+__init__(image_input, name_label, index):
+  - Copy image_input thành image_output
+  - Lưu các thuộc tính
+  - Gọi self.process()
+
+process():
+  QUY TRÌNH XỬ LÝ:
+  
+  1. Tạo thư mục:
+     - os.makedirs("data_image_raw\\{name_label}", exist_ok=True)
+  
+  2. Phát hiện khuôn mặt:
+     - face_result = facemodel.predict(image_output, conf=0.6)
+     - boxes_xyxy = danh sách bounding box
+  
+  3. Nếu không tìm thấy:
+     - check = 0
+     - Print "Không phát hiện khuôn mặt nào"
+     - Return
+  
+  4. Với mỗi box tìm thấy:
+     a) Lấy tọa độ:
+        - x1, y1, x2, y2 = map(int, box)
+        - h, w = y2-y1, x2-x1
+        - Lưu vào self.x, self.y, self.w, self.h
+     
+     b) Cắt và resize:
+        - img_cut = image_output[y1:y1+h, x1:x1+w]
+        - img_cut = cv2.resize(img_cut, (128, 128))
+     
+     c) Data augmentation:
+        - beta_value = beta[index % len(beta)]
+        - img_cut = cv2.convertScaleAbs(img_cut, alpha=1.0, beta=beta_value)
+        - Điều chỉnh độ sáng theo index
+     
+     d) Lưu ảnh:
+        - cv2.imwrite(f'data_image_raw\\{name_label}\\out{index}.jpg', img_cut)
+        - Print thông báo đã lưu
+     
+     e) Vẽ lên image_output:
+        - cvzone.cornerRect: Vẽ bounding box
+        - cv2.putText: Vẽ text thông báo
+          + Text: "Da luu anh thu {index} cua {name_label}"
+          + Vị trí: Trên bounding box
+          + Font: FONT_HERSHEY_SIMPLEX
+          + Color: (0, 128, 255)
+
+CHUẨN HÓA DỮ LIỆU:
+- Ảnh resize về 128x128 pixel
+- Định dạng: BGR (OpenCV standard)
+- Đã áp dụng data augmentation về độ sáng
+
+LƯU Ý:
+- Model YOLO được load 1 lần duy nhất (global)
+- Beta array có 50 giá trị -> 50 mức độ sáng khác nhau
+- Chỉ xử lý 1 mặt đầu tiên trong frame
+
+--------------------------------------------------------------------------------
+7. check_and_save_img.py - QUẢN LÝ ẢNH CHECK IN/OUT
+--------------------------------------------------------------------------------
+
+CLASS: CheckAndSaveImg
+
+VAI TRÒ:
+- Quản lý thư mục image_data/
+- Lưu ảnh check in với tên là thời gian
+- Kiểm tra trạng thái check in
+- Xóa ảnh khi check out
+
+THƯ MỤC GỐC: path_root = 'image_data'
+
+CẤU TRÚC THƯ MỤC:
+image_data/
+  ├── person1/
+  │   └── HH-MM-SS DD-MM-YYYY.jpg
+  ├── person2/
+  │   └── HH-MM-SS DD-MM-YYYY.jpg
+  └── ...
+
+PHƯƠNG THỨC:
+
+check_exists(label):
+  KIỂM TRA ĐÃ CHECK IN CHƯA:
+  
+  - Return: os.path.exists(path_root + '/' + label)
+  - True: Đã có thư mục (đã check in)
+  - False: Chưa có thư mục (chưa check in)
+
+save_image(label, image_array):
+  LƯU ẢNH CHECK IN:
+  
+  1. Kiểm tra đã check in chưa:
+     - Nếu có rồi: Print "Đã lưu trước đó, yêu cầu xóa..."
+  
+  2. Nếu chưa có:
+     a) Lấy thời gian hiện tại:
+        - now = datetime.now()
+        - name = now.strftime("%H-%M-%S %d-%m-%Y")
+        - Format: "14-30-45 09-11-2025"
+        
+        LƯU Ý: Dùng dấu '-' thay '/' và ':' 
+        vì không hợp lệ trên Windows
+     
+     b) Tạo thư mục:
+        - path_dir = image_data/label/
+        - os.makedirs(path_dir, exist_ok=True)
+     
+     c) Lưu ảnh:
+        - cv2.imwrite(path_dir/name.jpg, image_array)
+
+delete_image(label):
+  XÓA THÔNG TIN CHECK IN:
+  
+  - path_dir = path_root + '/' + label
+  - Dùng shutil.rmtree(path_dir)
+    + Xóa cả thư mục và file bên trong
+  - Bắt FileNotFoundError nếu không tồn tại
+
+get_data(label):
+  LẤY THÔNG TIN CHECK IN:
+  
+  1. Kiểm tra tồn tại:
+     - Nếu không: Return 'Chưa check in'
+  
+  2. Nếu có:
+     a) Lấy tên file ảnh:
+        - path = path_root + '/' + label
+        - img_name = os.listdir(path)[0]
+        - Lấy file đầu tiên (chỉ có 1 file)
+     
+     b) Đọc ảnh:
+        - img_array = cv2.imread(path + '/' + img_name)
+     
+     c) Parse thời gian từ tên file:
+        - date_time_img = img_name[:-4]  # Bỏ '.jpg'
+        - Replace 2 dấu '-' đầu thành ':'
+        - Format: "14:30:45 09-11-2025"
+     
+     d) Return: (date_time_img, img_array)
+
+VẤN ĐỀ ĐÃ GIẢI QUYẾT:
+- Windows không cho phép '/' và ':' trong tên file
+- Giải pháp: Dùng '-' khi lưu, convert lại khi hiển thị
+
+--------------------------------------------------------------------------------
+8. attendance_logger.py - QUẢN LÝ LOGGING VÀ XUẤT EXCEL
+--------------------------------------------------------------------------------
+
+CLASS: AttendanceLogger
+
+VAI TRÒ:
+- Quản lý file attendance_log.json
+- Xuất dữ liệu ra file Excel
+- Lưu trữ lịch sử chấm công persistent
+
+THUỘC TÍNH:
+- log_file: 'attendance_log.json'
+- excel_folder: 'excel'
+- data: List chứa các record chấm công
+
+PHƯƠNG THỨC:
+
+load_log():
+  - Đọc dữ liệu từ attendance_log.json
+  - Return list records hoặc [] nếu file không tồn tại
+
+save_log():
+  - Ghi dữ liệu vào attendance_log.json
+  - Format JSON với indent=2, ensure_ascii=False
+
+export_to_excel():
+  XUẤT FILE EXCEL:
+  
+  1. Kiểm tra dữ liệu:
+     - Nếu self.data rỗng -> return None
+  
+  2. Tạo thư mục excel/:
+     - os.makedirs(excel_folder, exist_ok=True)
+  
+  3. Tạo tên file:
+     - filename = f'ChamCong_{now.strftime("%d-%m-%Y_%H-%M-%S")}.xlsx'
+     - filepath = os.path.join(excel_folder, filename)
+  
+  4. Chuyển đổi dữ liệu:
+     - df = pd.DataFrame(self.data)
+     - Sắp xếp cột: name, date, check_in, check_out, working_hours
+     - Đổi tên cột sang tiếng Việt
+  
+  5. Xuất Excel:
+     - Dùng pd.ExcelWriter với engine='openpyxl'
+     - Sheet name: 'Chấm Công'
+     - Tự động điều chỉnh độ rộng cột
+  
+  6. Return filepath
+
+CẤU TRÚC DỮ LIỆU RECORD:
+{
+  "name": "Họ và tên",
+  "date": "DD-MM-YYYY", 
+  "check_in": "HH:MM:SS DD-MM-YYYY",
+  "check_out": "HH:MM:SS DD-MM-YYYY",
+  "working_hours": 8.5,
+  "image_path": "image_data/Tên"
+}
+
+--------------------------------------------------------------------------------
+9. requirements.txt - CÁC THƯ VIỆN CẦN THIẾT
+--------------------------------------------------------------------------------
+
+PyQt5           # Framework giao diện GUI
+numpy           # Xử lý mảng, tính toán
+opencv-python   # Computer vision, xử lý ảnh/video
+scikit-learn    # Machine learning (preprocessing)
+tensorflow      # Deep learning framework
+ultralytics     # YOLO models
+cvzone          # Utilities cho OpenCV
+keras           # High-level API cho TensorFlow
+pandas          # Xử lý dữ liệu và xuất Excel
+openpyxl        # Engine để tạo file .xlsx
+
+PHIÊN BẢN:
+- Không chỉ định version cụ thể
+- Khuyến nghị cài bản mới nhất tương thích
+
+CÀI ĐẶT:
+pip install -r requirements.txt
+
+================================================================================
+                        LUỒNG HOẠT ĐỘNG TỔNG QUAN
+================================================================================
+
+WORKFLOW TỔNG THỂ:
+
+[CHÚ THÍCH] LOGIC CHẤM CÔNG MỚI:
+==================================
+- Check In: Lưu ảnh vào image_data/{name}/
+- Check Out: Lấy thời gian từ ảnh + Tính giờ làm + Lưu JSON + Xóa ảnh
+- Xuất Excel: Đọc JSON -> Tạo .xlsx trong thư mục excel/
+
+[BƯỚC 1] THU THẬP DỮ LIỆU
+========================
+1. Người dùng chọn tab "Thu thập dữ liệu"
+2. handle_main.change_page(2):
+   - Mở camera
+   - Kết nối timer với update_frame()
+   - Hiển thị video realtime
+
+3. Người dùng nhập:
+   - Tên người: "Nguyen Van A"
+   - Số ảnh: 500
+
+4. Bấm nút "Thu thập":
+   - Kết nối timer với start_detect()
+   - Mỗi 30ms:
+     + Đọc frame từ camera
+     + Tạo ImageDetect object
+     + YOLO phát hiện mặt
+     + Cắt và resize về 128x128
+     + Áp dụng augmentation (điều chỉnh sáng)
+     + Lưu vào data_image_raw/Nguyen Van A/outX.jpg
+     + count++
+   - Dừng khi count >= 500
+
+5. Lặp lại cho các người khác (tối thiểu 5 người)
+
+[BƯỚC 2] TRAINING MODEL
+========================
+1. Người dùng chọn tab "Xử lý và train"
+2. handle_main.change_page(3):
+   - Đóng camera
+   
+3. Chọn số người (ví dụ: "dưới 10 người")
+   - Điều chỉnh architecture cho phù hợp
+
+4. Bấm nút "Xử lý và huấn luyện":
+   - start_training() khởi động QThread
+   - Thread chạy run():
+   
+   a) process_img_to_numpy():
+      - Quét data_image_raw/
+      - Đọc tất cả ảnh
+      - Tạo numpy array (N, 128, 128, 3)
+      - OneHotEncoder cho labels
+      - Normalize về [0, 1]
+      - Progress: 20% -> 50%
+   
+   b) train():
+      - Split 80/20 train/test
+      - Load MobileNetV2 (transfer learning)
+      - Xây dựng model CNN
+      - Training 10 epochs
+      - Lưu model: model/model_cnn.h5
+      - Lưu categories: model/categories.pkl
+      - Progress: 50% -> 100%
+   
+   c) update_log():
+      - Hiển thị log mỗi epoch
+      - Model summary
+      - Training metrics
+
+[BƯỚC 3] CHẤM CÔNG
+===================
+1. Người dùng chọn tab "Chấm công"
+2. handle_main.change_page(4):
+   - Load model CNN
+   - Load categories
+   - Mở camera
+   - Kết nối timerr với update_frame_run()
+
+3. Bấm nút "Nhận diện":
+   - Kết nối timerr với start_predict()
+   - Mỗi 30ms:
+     + Đọc frame từ camera
+     + YOLO phát hiện mặt
+     + Cắt và tiền xử lý
+     + CNN dự đoán
+     + Nếu accuracy >= 80%:
+       * Hiển thị tên và %
+       * Kiểm tra đã check in chưa
+       * Nếu có: Hiển thị time + ảnh check in
+       * Nếu chưa: "Chưa check in"
+     + Nếu < 80%:
+       * "unknow"
+
+4. Bấm "Check in":
+   - CheckAndSaveImg.save_image()
+   - Tạo thư mục image_data/Nguyen Van A/
+   - Lưu ảnh với tên = thời gian hiện tại
+   - "14-30-45 09-11-2025.jpg"
+   - CHƯA LƯU VÀO JSON
+
+5. Khi người đó xuất hiện lại:
+   - Nhận diện tự động
+   - Hiển thị thời gian check in
+   - Hiển thị ảnh lúc check in
+
+6. Bấm "Check out":
+   - Lấy thời gian check in từ tên file ảnh
+   - Lấy thời gian check out hiện tại
+   - Tính working_hours = checkout - checkin
+   - Lưu record đầy đủ vào attendance_log.json
+   - Xóa thư mục image_data/Nguyen Van A/
+
+7. Bấm "Xuất EXCEL":
+   - AttendanceLogger.export_to_excel()
+   - Tạo file: excel/ChamCong_DD-MM-YYYY_HH-MM-SS.xlsx
+   - Có đầy đủ: Họ tên, Ngày, Giờ vào, Giờ ra, Tổng giờ
+
+7. Bấm "Xuất EXCEL":
+   - AttendanceLogger.export_to_excel()
+   - Đọc dữ liệu từ attendance_log.json
+   - Tạo file Excel: excel/ChamCong_DD-MM-YYYY_HH-MM-SS.xlsx
+   - Các cột: Họ và Tên, Ngày, Giờ Vào, Giờ Ra, Tổng Giờ Làm
+   - Hiển thị popup với đường dẫn file
+
+================================================================================
+                        KIẾN TRÚC MODEL AI
+================================================================================
+
+[1] YOLO v11n-FACE
+==================
+CÔNG DỤNG: Phát hiện khuôn mặt trong ảnh
+
+FILE: model/yolov11n-face.pt
+
+ĐẶC ĐIỂM:
+- Version: YOLO v11 nano (lightweight)
+- Task: Face detection
+- Pre-trained: Đã train sẵn trên dataset khuôn mặt
+- Confidence threshold: 0.6
+
+INPUT: 
+- Ảnh RGB/BGR bất kỳ kích thước
+
+OUTPUT:
+- Bounding boxes: [x1, y1, x2, y2]
+- Confidence score cho mỗi box
+
+SỬ DỤNG:
+face_result = face_model.predict(image, conf=0.6, verbose=False)
+boxes = face_result[0].boxes.xyxy.tolist()
+
+[2] CNN với TRANSFER LEARNING
+==============================
+CÔNG DỤNG: Phân loại khuôn mặt (nhận diện người)
+
+FILE: model/model_cnn.h5
+
+KIẾN TRÚC:
+
+INPUT: (128, 128, 3)
+  ↓
+[MobileNetV2 Base]
+  - Pre-trained on ImageNet
+  - Frozen layers (trainable=False)
+  - Last layer: trainable=True
+  ↓
+GlobalAveragePooling2D
+  - Thay thế Flatten
+  - Giảm parameters
+  ↓
+BatchNormalization
+  - Chuẩn hóa dữ liệu
+  ↓
+Dense(128, activation='relu')
+  - Fully connected
+  - 128 neurons
+  ↓
+Dropout(0.5)
+  - Tránh overfitting
+  ↓
+Dense(num_class, activation='softmax')
+  - Số class = số người
+  - Output: Xác suất mỗi người
+  ↓
+OUTPUT: [p1, p2, ..., pN]
+
+TRAINING CONFIG:
+- Optimizer: Adam (lr=0.0001)
+- Loss: categorical_crossentropy
+- Metrics: accuracy
+- Batch size: 32
+- Epochs: 10
+- Validation split: 20%
+
+WHY MOBILENETV2?
+- Lightweight: Phù hợp embedded system
+- Pre-trained: Đã học features tổng quát
+- Fast inference: Thời gian dự đoán nhanh
+- Good accuracy: Độ chính xác cao
+
+[3] ONEHOT ENCODER
+==================
+CÔNG DỤNG: Chuyển đổi labels thành vector one-hot
+
+EXAMPLE:
+Labels: ['Nguyen Van A', 'Tran Van B', 'Le Van C']
+↓
+Encoder.fit_transform()
+↓
+[
+  [1, 0, 0],  # Nguyen Van A
+  [0, 1, 0],  # Tran Van B
+  [0, 0, 1]   # Le Van C
+]
+
+LƯU TRỮ:
+- File: model/categories.pkl
+- Format: pickle
+- Nội dung: encoder.categories_
+  + Array 2D: [['label1', 'label2', ...]]
+
+SỬ DỤNG:
+with open('model/categories.pkl', 'rb') as f:
+    cat = pickle.load(f)
+lb = np.array(cat[0])  # ['label1', 'label2', ...]
+
+================================================================================
+                    KỸ THUẬT XỬ LÝ ẢNH ĐẶC BIỆT
+================================================================================
+
+[1] DATA AUGMENTATION
+=====================
+MỤC ĐÍCH: Tăng đa dạng dữ liệu, tránh overfitting
+
+KỸ THUẬT ÁP DỤNG:
+- Điều chỉnh độ sáng (Brightness)
+- beta = [-40, -38, ..., 56, 58]
+- cv2.convertScaleAbs(img, alpha=1.0, beta=beta[i])
+
+CÔNG THỨC:
+new_pixel = saturate(alpha * old_pixel + beta)
+
+GIẢI THÍCH:
+- alpha=1.0: Giữ nguyên contrast
+- beta: Thay đổi brightness
+- Beta âm: Tối hơn
+- Beta dương: Sáng hơn
+- saturate: Giới hạn [0, 255]
+
+VÍ DỤ:
+- Ảnh 0: beta=-40 (rất tối)
+- Ảnh 25: beta=10 (vừa)
+- Ảnh 49: beta=58 (rất sáng)
+
+LỢI ÍCH:
+- Model học được trong nhiều điều kiện ánh sáng
+- Không cần thu thập ở nhiều môi trường khác nhau
+
+[2] NORMALIZATION
+=================
+MỤC ĐÍCH: Chuẩn hóa dữ liệu đầu vào
+
+CÔNG THỨC:
+img_normalized = img.astype('float32') / 255
+
+RANGE:
+- Trước: [0, 255] (uint8)
+- Sau: [0.0, 1.0] (float32)
+
+LỢI ÍCH:
+- Training ổn định hơn
+- Converge nhanh hơn
+- Tránh gradient exploding
+
+[3] RESIZE
+==========
+CHUẨN HÓA KÍCH THƯỚC:
+- Tất cả ảnh resize về 128x128
+- cv2.resize(img, (128, 128))
+
+LÝ DO:
+- Model yêu cầu input cố định
+- 128x128 là compromise giữa:
+  + Chất lượng chi tiết
+  + Tốc độ xử lý
+  + Dung lượng model
+
+[4] COLOR CONVERSION
+====================
+OpenCV -> PyQt:
+- OpenCV: BGR
+- PyQt: RGB
+- cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+OpenCV -> Model:
+- Giữ nguyên BGR (MobileNetV2 hỗ trợ)
+
+================================================================================
+                        QUẢN LÝ BỘ NHỚ VÀ HIỆU NĂNG
+================================================================================
+
+[1] CAMERA MANAGEMENT
+=====================
+STRATEGY: Mở/đóng camera theo nhu cầu
+
+TRANG HƯỚNG DẪN:
+- Camera: ĐÓNG (tiết kiệm tài nguyên)
+
+TRANG THU THẬP DỮ LIỆU:
+- Camera: MỞ
+- Timer: 30ms (33 FPS)
+- Mode: update_frame / start_detect
+
+TRANG TRAINING:
+- Camera: ĐÓNG (giải phóng GPU/CPU)
+
+TRANG CHẤM CÔNG:
+- Camera: MỞ
+- Timer: 30ms (33 FPS)
+- Mode: update_frame_run / start_predict
+
+CLEANUP:
+- closeEvent(): Release camera
+- Stop timers
+
+[2] MODEL LOADING
+=================
+STRATEGY: Lazy loading (load khi cần)
+
+YOLO:
+- Load 1 lần duy nhất (global variable)
+- ImageDetect.py: model = YOLO(...)
+- Tái sử dụng cho mọi detection
+
+CNN:
+- Load khi vào trang chấm công
+- handle_main.change_page(4)
+- Cache trong memory: self.model_cnn
+
+CATEGORIES:
+- Load cùng lúc với CNN
+- Lưu trong self.lb
+
+[3] THREAD MANAGEMENT
+=====================
+MAIN THREAD (GUI):
+- Xử lý UI events
+- Cập nhật display
+- Không được block
+
+WORKER THREAD:
+- Training model
+- QThread: HandelPageTrain
+- Communicate qua signals/slots
+
+TIMER THREAD:
+- QTimer cho camera update
+- 30ms interval
+- Callback trong main thread
+
+[4] MEMORY OPTIMIZATION
+=======================
+IMAGE PROCESSING:
+- Không lưu toàn bộ video
+- Chỉ process frame hiện tại
+- Release ngay sau khi xử lý
+
+TRAINING:
+- Load all data vào RAM (data_processed)
+- Có thể gây vấn đề với dataset lớn
+- Giải pháp: Dùng ImageDataGenerator
+
+MODEL:
+- Lưu file .h5 (compressed)
+- Load vào RAM khi cần
+- Không load lại mỗi frame
+
+================================================================================
+                        ĐIỂM MẠNH CỦA HỆ THỐNG
+================================================================================
+
+[1] GIAO DIỆN THÂN THIỆN
+=========================
+- PyQt5: Giao diện hiện đại
+- Layout rõ ràng: 4 trang riêng biệt
+- Hướng dẫn chi tiết tích hợp
+- Real-time feedback
+
+[2] TRANSFER LEARNING
+=====================
+- MobileNetV2 pre-trained
+- Không cần dataset khổng lồ
+- Training nhanh (10 epochs)
+- Accuracy cao ngay cả với ít dữ liệu
+
+[3] DATA AUGMENTATION
+=====================
+- Tự động điều chỉnh độ sáng
+- Tăng 50 lần số lượng biến thể
+- Robust với điều kiện ánh sáng khác nhau
+
+[4] MODULARITY
+==============
+- Code tách biệt theo chức năng
+- Dễ bảo trì, mở rộng
+- Class inheritance hierarchy rõ ràng
+
+[5] REAL-TIME PERFORMANCE
+=========================
+- 30ms per frame (33 FPS)
+- YOLO v11 nano: Fast detection
+- MobileNetV2: Fast inference
+
+[6] AUTOMATIC WORKFLOW
+======================
+- Tự động phát hiện -> cắt -> lưu
+- Tự động training khi có data
+- Tự động nhận diện không cần trigger
+
+================================================================================
+                        HẠN CHẾ VÀ CẢI TIẾN
+================================================================================
+
+[1] HẠN CHẾ HIỆN TẠI
+====================
+
+A. YÊU CẦU DỮ LIỆU:
+   - Cần tối thiểu 5 người, mỗi người 500 ảnh
+   - Thu thập tốn thời gian
+   - Cải tiến: Sử dụng few-shot learning
+
+B. CHỈ NHẬN DIỆN 1 MẶT:
+   - Code chỉ xử lý box đầu tiên
+   - Cải tiến: Loop qua tất cả boxes
+
+C. MEMORY ISSUE:
+   - Load toàn bộ data vào RAM
+   - Cải tiến: Dùng data generator
+
+D. LOGIC CHECKOUT CẦN HOÀN THIỆN:
+   - Hiện tại chỉ lưu JSON khi checkout
+   - Cải tiến: Có thể lưu partial data khi checkin
+
+E. KHÔNG LƯU LỊCH SỬ:
+   - Mỗi người chỉ lưu 1 lần check in
+   - Cải tiến: Database (SQLite)
+
+F. KHÔNG XỬÝ MULTI-CAMERA:
+   - Hard-code cv2.VideoCapture(0)
+   - Cải tiến: Cho phép chọn camera
+
+G. KHÔNG CÓ USER AUTHENTICATION:
+   - Ai cũng có thể thao tác
+   - Cải tiến: Thêm login system
+
+[2] ĐỀ XUẤT CẢI TIẾN
+====================
+
+A. ARCHITECTURE:
+   ✓ Tách UI và Business Logic
+   ✓ Implement Design Patterns (MVC, Observer)
+   ✓ Dependency Injection
+
+B. DATABASE:
+   ✓ SQLite cho lưu trữ persistent
+   ✓ Bảng: users, checkins, checkouts
+   ✓ Query lịch sử theo ngày/tuần/tháng
+
+C. REPORTING:
+   ✓ Export Excel với format đẹp
+   ✓ Thống kê: Tổng giờ làm, đi muộn, về sớm
+   ✓ Charts visualization
+
+D. SECURITY:
+   ✓ Encrypt model files
+   ✓ Admin panel với authentication
+   ✓ Role-based access control
+
+E. PERFORMANCE:
+   ✓ Multi-threading cho detection
+   ✓ GPU acceleration (CUDA)
+   ✓ Optimize model (quantization)
+
+F. FEATURES:
+   ✓ Nhận diện nhiều người cùng lúc
+   ✓ Anti-spoofing (chống ảnh giả)
+   ✓ Attendance notification
+   ✓ Web interface
+   ✓ Mobile app
+
+G. DEPLOYMENT:
+   ✓ Docker container
+   ✓ Cloud deployment (AWS/Azure)
+   ✓ CI/CD pipeline
+
+================================================================================
+                        HƯỚNG DẪN SỬ DỤNG CHI TIẾT
+================================================================================
+
+[BƯỚC 1] CÀI ĐẶT
+=================
+1. Clone repository:
+   git clone <repo_url>
+
+2. Cài đặt dependencies:
+   cd timekeeping
+   pip install -r requirements.txt
+
+3. Kiểm tra model files:
+   - model/yolov11n-face.pt (bắt buộc)
+   - model/model_cnn.h5 (sẽ tạo sau training)
+   - model/categories.pkl (sẽ tạo sau training)
+
+[BƯỚC 2] THU THẬP DỮ LIỆU
+==========================
+1. Chạy chương trình:
+   python handle_main.py
+
+2. Click tab "Thu thập dữ liệu"
+
+3. Nhập thông tin:
+   - Tên: "Nguyen Van A"
+   - Số ảnh: 500
+
+4. Chuẩn bị:
+   - Ngồi trước camera
+   - Ánh sáng đủ sáng
+   - Không có người khác trong frame
+
+5. Click "Thu thập":
+   - Nhìn thẳng 3-5 giây
+   - Quay mặt sang trái 3-5 giây
+   - Quay mặt sang phải 3-5 giây
+   - Ngẩng đầu lên 3-5 giây
+   - Cúi đầu xuống 3-5 giây
+   - Lặp lại đến khi đủ 500 ảnh
+
+6. Lặp lại cho người khác (tối thiểu 5 người)
+
+[BƯỚC 3] TRAINING MODEL
+========================
+1. Click tab "Xử lý và train"
+
+2. Chọn số người phù hợp
+
+3. Click "Xử lý và huấn luyện"
+
+4. Đợi training hoàn tất (~10-30 phút)
+
+5. Kiểm tra log:
+   - Model summary
+   - Training accuracy
+   - Validation accuracy
+   - "Hoàn tất, có thể trải nghiệm ngay!"
+
+[BƯỚC 4] CHẤM CÔNG
+===================
+1. Click tab "Chấm công"
+
+2. Click "Nhận diện"
+
+3. Đứng trước camera:
+   - Hệ thống tự động nhận diện
+   - Hiển thị tên và độ chính xác
+
+4. Check in:
+   - Click "Check in"
+   - Ảnh và thời gian được lưu
+
+5. Khi quay lại:
+   - Hệ thống tự động hiển thị thời gian check in
+   - Hiển thị ảnh lúc check in
+
+6. Check out:
+   - Click "Check out"
+   - Tính tổng giờ làm việc
+   - Lưu record vào attendance_log.json
+   - Xóa ảnh check in
+
+7. Xuất Excel:
+   - Click "Xuất EXCEL"
+   - File được tạo: excel/ChamCong_DD-MM-YYYY_HH-MM-SS.xlsx
+   - Chứa đầy đủ: Họ tên, Ngày, Giờ vào, Giờ ra, Tổng giờ làm
+
+================================================================================
+                        KẾT LUẬN
+================================================================================
+
+ĐÂY LÀ MỘT HỆ THỐNG CHẤM CÔNG HOÀN CHỈNH với các đặc điểm nổi bật:
+
+CÔNG NGHỆ:
+✓ AI/ML: YOLO v11, CNN, Transfer Learning
+✓ GUI: PyQt5 với giao diện thân thiện
+✓ CV: OpenCV cho xử lý ảnh/video
+
+CHỨC NĂNG:
+✓ Thu thập dữ liệu tự động
+✓ Training model CNN
+✓ Nhận diện khuôn mặt realtime
+✓ Quản lý check in/out
+✓ Xuất Excel tự động với tính toán giờ làm
+✓ Lưu trữ lịch sử persistent (JSON)
+
+ƯU ĐIỂM:
+✓ Code structure tốt (OOP, inheritance)
+✓ Modularity cao (tách file logic)
+✓ UI/UX thân thiện
+✓ Performance tốt (33 FPS)
+✓ Transfer learning giảm yêu cầu data
+
+NHƯỢC ĐIỂM:
+✓ Yêu cầu data nhiều (500 ảnh/người)
+✓ Chỉ lưu JSON khi checkout (không lưu partial checkin)
+✓ Không hỗ trợ multi-user simultaneous
+✓ Không có authentication/authorization
+
+TIỀM NĂNG:
+✓ Có thể scale lên enterprise
+✓ Dễ dàng thêm features mới
+✓ Deploy lên cloud/embedded system
+
+ĐÁNH GIÁ TỔNG THỂ: 8.5/10
+- Phù hợp cho môi trường văn phòng nhỏ/vừa
+- Code quality tốt
+- Có tiềm năng phát triển cao
+
+TÁC GIẢ: Lê Việt Anh
+GITHUB: github.com/vietanhlee/face-recognition-Qt5
+
+================================================================================
+                            HẾT
+================================================================================

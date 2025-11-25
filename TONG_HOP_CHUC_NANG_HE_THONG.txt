@@ -1,0 +1,70 @@
+================================================================================
+TỔNG HỢP CHỨC NĂNG CÁC FILE VÀ MÔ HÌNH HOẠT ĐỘNG
+================================================================================
+
+1. TỔNG QUAN DỰ ÁN
+------------------
+Phần mềm chấm công tự động sử dụng nhận diện khuôn mặt, gồm các chức năng:
+- Thu thập dữ liệu gương mặt từ camera
+- Huấn luyện mô hình CNN nhận diện
+- Chấm công (check in/out) tự động qua camera
+- Lưu trữ thông tin thời gian và hình ảnh
+
+2. CẤU TRÚC THƯ MỤC & CHỨC NĂNG TỪNG FILE
+------------------------------------------
+- MainUi.py: File giao diện người dùng, sinh tự động từ Qt Designer.
+- handle_main.py: File chính, điều phối toàn bộ ứng dụng, kết nối các trang, quản lý trạng thái camera.
+- handle_page_get_data.py: Xử lý trang thu thập dữ liệu gương mặt từ camera.
+- handle_page_train.py: Xử lý trang training, huấn luyện mô hình CNN.
+- handle_page_run.py: Xử lý trang chấm công, nhận diện khuôn mặt realtime, quản lý check in/out, xuất Excel.
+- attendance_logger.py: Quản lý ghi log chấm công, xuất file Excel.
+- check_and_save_img.py: Quản lý lưu/xóa ảnh khi check in/out.
+- ImageDetect.py: Xử lý phát hiện và cắt khuôn mặt từ ảnh camera.
+- test_excel_from_json.py: Test chức năng xuất Excel từ file JSON.
+- attendance_log.json: File lưu lịch sử chấm công (dạng JSON).
+- requirements.txt: Danh sách thư viện cần cài đặt.
+- HUONG_DAN_XUAT_EXCEL.md: Hướng dẫn chi tiết chức năng xuất Excel.
+- TONG_KET_XUAT_EXCEL.md: Tổng kết chức năng xuất Excel, kết quả test.
+- LOGIC_CHECKIN_CHECKOUT.md: Mô tả logic quy trình check in/check out.
+- PHAN_TICH_SOURCE_CODE.txt: Phân tích chi tiết source code, kiến trúc hệ thống.
+- README.md: Giới thiệu dự án.
+
+Thư mục dữ liệu:
+- data_image_raw/: Ảnh gốc dùng để training.
+- image_data/: Ảnh lưu khi check in.
+- model/: Chứa model AI (model_cnn.h5, yolov11n-face.pt).
+- excel/: Chứa file Excel xuất ra.
+
+3. FILE CHÍNH VÀ LUỒNG HOẠT ĐỘNG
+-------------------------------
+- File chính: handle_main.py
+- Khi chạy, phần mềm khởi tạo giao diện, kết nối các trang:
+  + Trang hướng dẫn
+  + Trang thu thập dữ liệu
+  + Trang training
+  + Trang chấm công
+- Người dùng thao tác qua các tab, camera được mở/đóng tùy trang.
+- Quá trình hoạt động:
+  1. Thu thập dữ liệu: Mở camera, lưu ảnh gương mặt vào data_image_raw/
+  2. Training: Xử lý ảnh, huấn luyện model CNN, lưu vào model/
+  3. Chấm công: Nhận diện khuôn mặt realtime, check in/out, lưu log vào attendance_log.json, lưu ảnh vào image_data/
+  4. Xuất Excel: Tổng hợp dữ liệu chấm công, xuất file Excel vào excel/
+
+4. MÔ HÌNH AI
+-------------
+- YOLO v11n-face: Phát hiện khuôn mặt từ camera.
+- CNN (model_cnn.h5): Nhận diện người từ ảnh khuôn mặt.
+- Quá trình training sử dụng MobileNetV2 (transfer learning).
+
+5. ĐỊNH DẠNG DỮ LIỆU
+--------------------
+- attendance_log.json: Lưu lịch sử chấm công, gồm tên, thời gian check in/out, số giờ làm, đường dẫn ảnh.
+- File Excel: Tổng hợp dữ liệu từ JSON, xuất báo cáo chấm công.
+
+================================================================================
+TÀI LIỆU THAM KHẢO
+- PHAN_TICH_SOURCE_CODE.txt
+- HUONG_DAN_XUAT_EXCEL.md
+- TONG_KET_XUAT_EXCEL.md
+- LOGIC_CHECKIN_CHECKOUT.md
+================================================================================
