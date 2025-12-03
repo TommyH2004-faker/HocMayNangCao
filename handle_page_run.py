@@ -173,13 +173,20 @@ class HandlePageRun(Ui_MainWindow):
                 # Lấy index có tỉ lệ cao nhất, axis = 1 vì đây là mảng 2 chiều [[data]] 
                 predicted_label_index = np.argmax(arr_predict, axis = 1)
                 # Lấy tỉ lệ phần trăm tương ứng, các mảng ở đây đều là 2D nên cần trỏ truy cập vào phần tử đầu 
-                accuracy = arr_predict[0][predicted_label_index[0]] 
+                accuracy = arr_predict[0][predicted_label_index[0]]
+                
+                # Kiểm tra độ tin cậy cao và sự chênh lệch rõ ràng
+                # Sắp xếp để lấy 2 xác suất cao nhất
+                sorted_probs = np.sort(arr_predict[0])[::-1]
+                highest_prob = sorted_probs[0]
+                second_prob = sorted_probs[1] if len(sorted_probs) > 1 else 0
+                confidence_gap = highest_prob - second_prob
                 
                 # Lấy tên người đó
                 name =  self.lb[predicted_label_index[0]]
 
-                # Chấp nhận gương mặt
-                if accuracy >= 0.8:
+                # Chấp nhận gương mặt: độ tin cậy cao (>75%) VÀ chênh lệch rõ ràng (>20%)
+                if accuracy >= 0.75 and confidence_gap >= 0.20:
                     self.image_input = frame_copy
                     self.name = name    
                     
@@ -199,16 +206,16 @@ class HandlePageRun(Ui_MainWindow):
                         self.label_set_name.setText(name)
                         self.labe_set_time.setText('Chưa check in')
                 
-                # Trường hợp độ chính xác thấp
+                # Trường hợp độ chính xác thấp - khuôn mặt lạ
                 else:
                     self.image_input = np.array([])
                     self.name = None
                     
-                    txt = 'unknow'
+                    txt = 'Unknown (' + str(round(accuracy * 100, 2)) + '%)'
                     
-                    self.cam_view_in.setText('gương mặt không tồn tại')
-                    self.label_set_name.setText('gương mặt không tồn tại')
-                    self.labe_set_time.setText('gương mặt không tồn tại')
+                    self.cam_view_in.setText('Khuôn mặt lạ - Unknown')
+                    self.label_set_name.setText('Unknown')
+                    self.labe_set_time.setText('Không nhận diện được')
     
                 cv2.putText(img = frame, org= (x + w // 2 - 90, y - 25), text = txt, 
                             fontFace = cv2.FONT_HERSHEY_SIMPLEX, fontScale = 1, color = (255, 0,0), thickness= 3)
