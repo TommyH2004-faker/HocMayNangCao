@@ -113,7 +113,7 @@ class HandleMain(HandlePageGetData, HandelPageTrain, HandlePageRun):
             self.mode_cam = 'off'
 
             if self.cap == None:
-                self.cap = cv2.VideoCapture(1)
+                self.cap = cv2.VideoCapture(0)
                 if not self.cap.isOpened():
                     print("Không thể mở camera")
             self.timerr.timeout.connect(self.update_frame_run)

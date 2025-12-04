@@ -136,26 +136,27 @@ class HandlePageRun(Ui_MainWindow):
 
         # Đọc một khung hình từ camera
         ret, frame = self.cap.read()
+        
+        if not ret or frame is None:
+            print('Không thể đọc ảnh từ camera')
+            return
+        
         frame = cv2.flip(frame, 1)
-
         frame_copy = frame.copy()
 
         face_result = face_model.predict(frame, conf = 0.6, verbose = False)
+        
+        boxes_xyxy = face_result[0].boxes.xyxy.tolist()
+        # Nếu không thấy người nào
+        if(len(boxes_xyxy) == 0):
+            self.name = None
+            self.image_input = np.array([])
 
-        if(ret == 0):
-            print('Không thể đọc ảnh')
-        else:
-            boxes_xyxy = face_result[0].boxes.xyxy.tolist()
-            # Nếu không thấy người nào
-            if(len(boxes_xyxy) == 0):
-                self.name = None
-                self.image_input = np.array([])
-
-                self.label_set_name.setText('Không tìm thấy gương mặt')
-                self.labe_set_time.setText('Không tìm thấy gương mặt')
-                self.cam_view_in.setText('Không tìm thấy gương mặt')
-            # Trường hợp len > 0
-            for box in boxes_xyxy:
+            self.label_set_name.setText('Không tìm thấy gương mặt')
+            self.labe_set_time.setText('Không tìm thấy gương mặt')
+            self.cam_view_in.setText('Không tìm thấy gương mặt')
+        # Trường hợp len > 0
+        for box in boxes_xyxy:
                 txt = None
                 x, y, x2, y2 = map(int, box)
                 w = x2 - x # width: chiều rộng
@@ -221,10 +222,10 @@ class HandlePageRun(Ui_MainWindow):
                             fontFace = cv2.FONT_HERSHEY_SIMPLEX, fontScale = 1, color = (255, 0,0), thickness= 3)
                 print(arr_predict[0], self.lb[predicted_label_index[0]], str(round(accuracy * 100, 2)) + ' %') # Hiển thị data lên màn console
 
-            # Chuyển đổi khung hình từ BGR (OpenCV) sang RGB (Qt)
-            frame = self.convert_qimg(frame)
-            # Hiển thị khung hình trên QLabel
-            self.cam_view_main_2.setPixmap(QPixmap.fromImage(frame).scaled(self.cam_view_main_2.size()))
+        # Chuyển đổi khung hình từ BGR (OpenCV) sang RGB (Qt)
+        frame = self.convert_qimg(frame)
+        # Hiển thị khung hình trên QLabel
+        self.cam_view_main_2.setPixmap(QPixmap.fromImage(frame).scaled(self.cam_view_main_2.size()))
     
     # Hàm hiển thị bình thường
     def update_frame_run(self):
